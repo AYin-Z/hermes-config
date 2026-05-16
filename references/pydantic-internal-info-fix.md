@@ -1,6 +1,6 @@
 # Pydantic `internal_info` Fix — Exact Patch
 
-**File**: `/home/ayin/memos-server/src/memos/memories/textual/item.py`  
+**File**: `~/memos-server/src/memos/memories/textual/item.py`  
 **Method**: `TextualMemoryItem.from_dict` (line ~313)  
 **Trigger**: Re-apply after every `git pull` of memos-server
 

@@ -216,7 +216,7 @@ Claude Code 配置 (`~/.claude/mcp.json`)：
   "mcpServers": {
     "memos": {
       "command": "python3",
-      "args": ["/home/ayin/.hermes/mcp-servers/memos-mcp/server.py"]
+      "args": ["~/.hermes/mcp-servers/memos-mcp/server.py"]
     }
   }
 }
