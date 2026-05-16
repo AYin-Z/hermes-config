@@ -1,0 +1,28 @@
+# 凭据
+.env
+*.key
+*.pem
+
+# 运行时数据
+*.db
+*.sqlite
+__pycache__/
+*.pyc
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# 日志
+*.log
+
+# 大文件
+*.gguf
+*.bin
+
+# 运行时配置（含未脱敏密钥）
+config.yaml

@@ -1,0 +1,123 @@
+--- a/src/memos/api/routers/server_router.py
++++ b/src/memos/api/routers/server_router.py
+@@ -14,6 +14,7 @@
+ import os
+ import random as _random
+ import socket
++import time as _time
+ 
+ from fastapi import APIRouter, HTTPException, Query
+ 
+@@ -97,6 +98,100 @@
+ graph_db = components["graph_db"]
+ 
+ 
++# =============================================================================
++# Health Check API Endpoints
++# =============================================================================
++
++
++@router.get("/health/detail", summary="Deep health check with dependency probes")
++def health_detail():
++    """
++    Deep health check that probes each dependency layer independently.
++
++    Returns:
++        dict with per-layer status, latency, and overall health verdict.
++    """
++    total_start = _time.time()
++    import json as _json
++    checks: dict[str, dict] = {}
++    all_green = True
++
++    # Layer 1: API alive (always true if we're here)
++    checks["api_alive"] = {"status": True, "latency_ms": 0}
++
++    # Layer 2: Neo4j connectivity (HTTP API via Docker network)
++    try:
++        t0 = _time.time()
++        import base64
++        import urllib.request as _req
++        neo4j_host = os.getenv("NEO4J_HOST", "neo4j-docker")
++        neo4j_auth = base64.b64encode(b"neo4j:12345678").decode()
++        neo4j_req = _req.Request(f"http://{neo4j_host}:7474/db/neo4j/tx/commit")
++        neo4j_req.add_header("Authorization", f"Basic {neo4j_auth}")
++        neo4j_req.add_header("Content-Type", "application/json")
++        neo4j_body = _json.dumps(
++            {"statements": [{"statement": "MATCH (n) RETURN count(n) AS cnt LIMIT 1"}]}
++        ).encode()
++        _resp = _req.urlopen(neo4j_req, data=neo4j_body, timeout=5)
++        neo4j_ms = round((_time.time() - t0) * 1000)
++        checks["neo4j"] = {"status": True, "latency_ms": neo4j_ms}
++    except Exception as e:
++        checks["neo4j"] = {"status": False, "error": str(e)[:100]}
++        all_green = False
++
++    # Layer 3: Qdrant connectivity (HTTP probe to its REST API)
++    try:
++        t0 = _time.time()
++        import urllib.request as _req
++        qdrant_host = os.getenv("QDRANT_HOST", "qdrant-docker")
++        qdrant_port = os.getenv("QDRANT_PORT", "6333")
++        resp = _req.urlopen(f"http://{qdrant_host}:{qdrant_port}/collections", timeout=5)
++        qdrant_ms = round((_time.time() - t0) * 1000)
++        if resp.status == 200:
++            checks["qdrant"] = {"status": True, "latency_ms": qdrant_ms}
++        else:
++            checks["qdrant"] = {"status": False, "status_code": resp.status, "latency_ms": qdrant_ms}
++            all_green = False
++    except Exception as e:
++        checks["qdrant"] = {"status": False, "error": str(e)[:100]}
++        all_green = False
++
++    # Layer 4: Write chain — try to write a tiny test memory
++    try:
++        t0 = _time.time()
++        cube_id = os.getenv("OWNER", "hermes")
++        test_key = f"health-probe-{_time.time()}"
++        from memos.api.product_models import APIADDRequest
++        from memos.api.handlers.add_handler import AddHandler
++        test_req = APIADDRequest(
++            user_id=cube_id,
++            messages=[{"role": "system", "content": f"[health] {test_key}"}],
++            async_mode="sync",
++            mode="fast",
++        )
++        add_handler.handle_add_memories(test_req)
++        write_ms = round((_time.time() - t0) * 1000)
++        checks["write_chain"] = {"status": True, "latency_ms": write_ms}
++    except Exception as e:
++        checks["write_chain"] = {"status": False, "error": str(e)[:100]}
++        all_green = False
++
++    # Layer 5: Search chain — search for the test memory (fuzzy, top1)
++    try:
++        t0 = _time.time()
++        from memos.api.product_models import APISearchRequest
++        search_req = APISearchRequest(
++            user_id=cube_id,
++            query="health-probe",
++            top_k=1,
++            mode="fast",
++        )
++        search_handler.handle_search_memories(search_req)
++        search_ms = round((_time.time() - t0) * 1000)
++        checks["search_chain"] = {"status": True, "latency_ms": search_ms}
++    except Exception as e:
++        checks["search_chain"] = {"status": False, "error": str(e)[:100]}
++        all_green = False
++
++    total_ms = round((_time.time() - total_start) * 1000)
++
++    return {
++        "status": "healthy" if all_green else "degraded",
++        "service": "memos",
++        "version": "2.0.14",
++        "total_latency_ms": total_ms,
++        "checks": checks,
++    }
++
++
+ # =============================================================================
+ # Search API Endpoints
+ # =============================================================================

@@ -1,0 +1,60 @@
+--- a/src/memos/api/handlers/add_handler.py
++++ b/src/memos/api/handlers/add_handler.py
+@@ -22,6 +22,10 @@
+ class AddHandler(BaseHandler):
+     """
+     Handler for memory addition operations.
++
++    Handles text memory additions with sync/async support.
+     """
++
++    # In-memory idempotency cache: key -> (response, timestamp)
++    # Prevents duplicate writes from network retries within ~30s window.
++    _idempotency_cache: dict[str, tuple[MemoryResponse, float]] = {}
+ 
+     def __init__(self, dependencies: HandlerDependencies):
+         """
+@@ -59,6 +63,24 @@
+             f"[DIAGNOSTIC] server_router -> add_handler.handle_add_memories called (Modified at 2025-11-29 18:46). Full request: {add_req.model_dump_json(indent=2)}"
+         )
+ 
++        # Idempotency check: same idempotency_key within 30s window
++        # prevents duplicate writes from network retries
++        if add_req.idempotency_key:
++            import time
++            now = time.time()
++            cached = AddHandler._idempotency_cache.get(add_req.idempotency_key)
++            if cached:
++                cached_resp, cached_ts = cached
++                if now - cached_ts < 30:
++                    self.logger.info(
++                        "[AddHandler] idempotency hit for key=%s (age=%.1fs), returning cached result",
++                        add_req.idempotency_key, now - cached_ts,
++                    )
++                    return cached_resp
++                else:
++                    # Expired — remove stale entry
++                    del AddHandler._idempotency_cache[add_req.idempotency_key]
++
+         if add_req.info:
+             exclude_fields = list_all_fields()
+             info_len = len(add_req.info)
+@@ -132,10 +154,17 @@
+ 
+         self.logger.info(f"[AddHandler] Final add results count={len(results)}")
+ 
+-        return MemoryResponse(
++        resp = MemoryResponse(
+             message="Memory added successfully",
+             data=results,
+         )
++
++        # Cache for idempotency
++        if add_req.idempotency_key:
++            import time
++            AddHandler._idempotency_cache[add_req.idempotency_key] = (resp, time.time())
++
++        return resp
+ 
+     def _resolve_cube_ids(self, add_req: APIADDRequest) -> list[str]:
+         """

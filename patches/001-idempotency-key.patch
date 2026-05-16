@@ -1,0 +1,18 @@
+--- a/src/memos/api/product_models.py
++++ b/src/memos/api/product_models.py
+@@ -527,6 +527,15 @@
+     task_id: str | None = Field(None, description="Task ID for monitering async tasks")
+     manager_user_id: str | None = Field(None, description="Manager User ID")
+     project_id: str | None = Field(None, description="Project ID")
++    idempotency_key: str | None = Field(
++        None,
++        description=(
++            "Idempotency key, typically in the format 'session_id:turn_id'. "
++            "When provided, the same key within a short time window (~30s) "
++            "returns the previous result without re-processing. "
++            "Prevents duplicate memory writes on network retry."
++        ),
++    )
+ 
+     # ==== Multi-cube writing ====
+     writable_cube_ids: list[str] | None = Field(
